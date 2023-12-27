@@ -33,31 +33,31 @@ func NewBlizzardClient(clientId string, clientSecret string) *BlizzardClient {
 	}
 }
 
-type RealmSearchResponseName struct {
+type bRealmSearchResponseName struct {
 	EnUS string `json:"en_US"`
 }
 
-type RealmSearchResponseRegion struct {
-	Name RealmSearchResponseName `json:"name"`
+type bRealmSearchResponseRegion struct {
+	Name bRealmSearchResponseName `json:"name"`
 }
 
-type RealmSearchResponseRealm struct {
-	Id       int64                     `json:"id"`
-	Name     RealmSearchResponseName   `json:"name"`
-	Region   RealmSearchResponseRegion `json:"region"`
-	Category RealmSearchResponseName   `json:"category"`
+type bRealmSearchResponseRealm struct {
+	Id       int64                      `json:"id"`
+	Name     bRealmSearchResponseName   `json:"name"`
+	Region   bRealmSearchResponseRegion `json:"region"`
+	Category bRealmSearchResponseName   `json:"category"`
 }
 
-type RealmSearchResponseData struct {
-	Realms []RealmSearchResponseRealm `json:"realms"`
+type bRealmSearchResponseData struct {
+	Realms []*bRealmSearchResponseRealm `json:"realms"`
 }
 
-type RealmSearchResponseResult struct {
-	Data RealmSearchResponseData `json:"data"`
+type bRealmSearchResponseResult struct {
+	Data *bRealmSearchResponseData `json:"data"`
 }
 
-type RealmSearchResponse struct {
-	Results []RealmSearchResponseResult `json:"results"`
+type bRealmSearchResponse struct {
+	Results []*bRealmSearchResponseResult `json:"results"`
 }
 
 type Realm struct {
@@ -65,17 +65,74 @@ type Realm struct {
 	Name string
 }
 
-type AuctionName struct {
+func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
+	u := url.URL{
+		Scheme: "https",
+		Host:   "us.api.blizzard.com",
+		Path:   "data/wow/search/connected-realm",
+	}
+
+	q := u.Query()
+	q.Set("namespace", bc.namespace)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := bc.getAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+accessToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server responded with status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var responseObj bRealmSearchResponse
+	err = json.Unmarshal(body, &responseObj)
+	if err != nil {
+		return nil, err
+	}
+
+	var realms []Realm
+	for _, result := range responseObj.Results {
+		for _, realm := range result.Data.Realms {
+			if realm.Region.Name.EnUS == "Classic Era North America" && realm.Category.EnUS == "Seasonal" {
+				realms = append(realms, Realm{Id: realm.Id, Name: realm.Name.EnUS})
+			}
+		}
+	}
+
+	return &realms, nil
+}
+
+type bAuctionHouseName struct {
 	EnUS string `json:"en_US"`
 }
 
-type Auction struct {
-	Id   int64       `json:"id"`
-	Name AuctionName `json:"name"`
+type bAuctionHouseAuction struct {
+	Id   int64             `json:"id"`
+	Name bAuctionHouseName `json:"name"`
 }
 
-type AuctionHouseResponse struct {
-	Auctions []Auction `json:"auctions"`
+type bAuctionHouseResponse struct {
+	Auctions []*bAuctionHouseAuction `json:"auctions"`
 }
 
 type AuctionHouse struct {
@@ -122,7 +179,7 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, erro
 		return nil, err
 	}
 
-	var responseObj AuctionHouseResponse
+	var responseObj bAuctionHouseResponse
 	err = json.Unmarshal(body, &responseObj)
 	if err != nil {
 		return nil, err
@@ -136,11 +193,37 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, erro
 	return &auctions, nil
 }
 
-func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
+type bAuctionItem struct {
+	Id int64 `json:"id"`
+}
+
+type bAuction struct {
+	Id       int64        `json:"id"`
+	Item     bAuctionItem `json:"item"`
+	Bid      int64        `json:"bid"`
+	Buyout   int64        `json:"buyout"`
+	Quantity int64        `json:"quantity"`
+	TimeLeft string       `json:"time_left"`
+}
+
+type bAuctionResponse struct {
+	Auctions []*bAuction `json:"auctions"`
+}
+
+type Auction struct {
+	Id       int64
+	ItemId   int64
+	Bid      int64
+	Buyout   int64
+	Quantity int64
+	TimeLeft string
+}
+
+func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auction, error) {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "us.api.blizzard.com",
-		Path:   "data/wow/search/connected-realm",
+		Path:   fmt.Sprintf("data/wow/connected-realm/%d/auctions/%d", realmId, auctionId),
 	}
 
 	q := u.Query()
@@ -175,25 +258,27 @@ func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
 		return nil, err
 	}
 
-	var responseObj RealmSearchResponse
+	var responseObj bAuctionResponse
 	err = json.Unmarshal(body, &responseObj)
 	if err != nil {
 		return nil, err
 	}
 
-	var realms []Realm
-	for _, result := range responseObj.Results {
-		for _, realm := range result.Data.Realms {
-			if realm.Region.Name.EnUS == "Classic Era North America" && realm.Category.EnUS == "Seasonal" {
-				realms = append(realms, Realm{Id: realm.Id, Name: realm.Name.EnUS})
-			}
-		}
+	var auctions []Auction
+	for _, auction := range responseObj.Auctions {
+		auctions = append(auctions, Auction{
+			Id:       auction.Id,
+			ItemId:   auction.Item.Id,
+			Bid:      auction.Bid,
+			Buyout:   auction.Buyout,
+			Quantity: auction.Quantity,
+			TimeLeft: auction.TimeLeft,
+		})
 	}
-
-	return &realms, nil
+	return &auctions, nil
 }
 
-type OAuthResponse struct {
+type boAuthResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int64  `json:"expires_in"`
@@ -241,7 +326,7 @@ func (bc *BlizzardClient) getAccessToken() (string, error) {
 		return "", err
 	}
 
-	var responseObj OAuthResponse
+	var responseObj boAuthResponse
 	err = json.Unmarshal(body, &responseObj)
 	if err != nil {
 		return "", err
