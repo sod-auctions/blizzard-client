@@ -65,9 +65,89 @@ type Realm struct {
 	Name string
 }
 
+type AuctionName struct {
+	EnUS string `json:"en_US"`
+}
+
+type Auction struct {
+	Id   int64       `json:"id"`
+	Name AuctionName `json:"name"`
+}
+
+type AuctionHouseResponse struct {
+	Auctions []Auction `json:"auctions"`
+}
+
+type AuctionHouse struct {
+	Id   int64
+	Name string
+}
+
+func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, error) {
+	u := url.URL{
+		Scheme: "https",
+		Host:   "us.api.blizzard.com",
+		Path:   fmt.Sprintf("data/wow/connected-realm/%d/auctions/index", realmId),
+	}
+
+	q := u.Query()
+	q.Set("namespace", bc.namespace)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := bc.getAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+accessToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server responded with status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var responseObj AuctionHouseResponse
+	err = json.Unmarshal(body, &responseObj)
+	if err != nil {
+		return nil, err
+	}
+
+	var auctions []AuctionHouse
+	for _, auction := range responseObj.Auctions {
+		auctions = append(auctions, AuctionHouse{Id: auction.Id, Name: auction.Name.EnUS})
+	}
+
+	return &auctions, nil
+}
+
 func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
-	req, err := http.NewRequest("GET",
-		"https://us.api.blizzard.com/data/wow/search/connected-realm?namespace="+bc.namespace, nil)
+	u := url.URL{
+		Scheme: "https",
+		Host:   "us.api.blizzard.com",
+		Path:   "data/wow/search/connected-realm",
+	}
+
+	q := u.Query()
+	q.Set("namespace", bc.namespace)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +182,6 @@ func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
 	}
 
 	var realms []Realm
-
 	for _, result := range responseObj.Results {
 		for _, realm := range result.Data.Realms {
 			if realm.Region.Name.EnUS == "Classic Era North America" && realm.Category.EnUS == "Seasonal" {
@@ -129,10 +208,16 @@ func (bc *BlizzardClient) getAccessToken() (string, error) {
 		return bc.accessToken, nil
 	}
 
+	u := url.URL{
+		Scheme: "https",
+		Host:   "oauth.battle.net",
+		Path:   "token",
+	}
+
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 
-	req, err := http.NewRequest("POST", "https://oauth.battle.net/token", strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", u.String(), strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", err
 	}
