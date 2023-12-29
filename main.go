@@ -15,7 +15,8 @@ type BlizzardClient struct {
 	clientId          string
 	clientSecret      string
 	accessToken       string
-	namespace         string
+	staticNamespace   string
+	dynamicNamespace  string
 	accessTokenExpiry time.Time
 	client            *http.Client
 	mutex             *sync.Mutex
@@ -23,9 +24,10 @@ type BlizzardClient struct {
 
 func NewBlizzardClient(clientId string, clientSecret string) *BlizzardClient {
 	return &BlizzardClient{
-		clientId:     clientId,
-		clientSecret: clientSecret,
-		namespace:    "dynamic-classic1x-us",
+		clientId:         clientId,
+		clientSecret:     clientSecret,
+		staticNamespace:  "static-classic1x-us",
+		dynamicNamespace: "dynamic-classic1x-us",
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -73,7 +75,7 @@ func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
 	}
 
 	q := u.Query()
-	q.Set("namespace", bc.namespace)
+	q.Set("namespace", bc.dynamicNamespace)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequest("GET", u.String(), nil)
@@ -148,7 +150,7 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, erro
 	}
 
 	q := u.Query()
-	q.Set("namespace", bc.namespace)
+	q.Set("namespace", bc.dynamicNamespace)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequest("GET", u.String(), nil)
@@ -193,6 +195,82 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, erro
 	return &auctions, nil
 }
 
+type bItemName struct {
+	EnUS string `json:"en_US"`
+}
+
+type bItemQuality struct {
+	Name bItemName `json:"name"`
+}
+
+type bItemPreviewItem struct {
+	Name    bItemName    `json:"name"`
+	Quality bItemQuality `json:"quality"`
+}
+
+type bItemResponse struct {
+	Id          int32            `json:"id"`
+	PreviewItem bItemPreviewItem `json:"preview_item"`
+}
+
+type Item struct {
+	Id      int32
+	Name    string
+	Quality string
+}
+
+func (bc *BlizzardClient) GetItem(itemId int32) (*Item, error) {
+	u := url.URL{
+		Scheme: "https",
+		Host:   "us.api.blizzard.com",
+		Path:   fmt.Sprintf("data/wow/item/%d", itemId),
+	}
+
+	q := u.Query()
+	q.Set("namespace", bc.staticNamespace)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := bc.getAccessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+accessToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server responded with status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var responseObj bItemResponse
+	err = json.Unmarshal(body, &responseObj)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Item{
+		Id:      responseObj.Id,
+		Name:    responseObj.PreviewItem.Name.EnUS,
+		Quality: responseObj.PreviewItem.Quality.Name.EnUS,
+	}, nil
+}
+
 type bAuctionItem struct {
 	Id int64 `json:"id"`
 }
@@ -219,6 +297,69 @@ type Auction struct {
 	TimeLeft string
 }
 
+type bItemMediaAsset struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type bItemMediaResponse struct {
+	Assets []bItemMediaAsset `json:"assets"`
+}
+
+func (bc *BlizzardClient) GetItemMedia(itemId int32) (string, error) {
+	u := url.URL{
+		Scheme: "https",
+		Host:   "us.api.blizzard.com",
+		Path:   fmt.Sprintf("data/wow/media/item/%d", itemId),
+	}
+
+	q := u.Query()
+	q.Set("namespace", bc.staticNamespace)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	accessToken, err := bc.getAccessToken()
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Add("Authorization", "Bearer "+accessToken)
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("server responded with status code %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var responseObj bItemMediaResponse
+	err = json.Unmarshal(body, &responseObj)
+	if err != nil {
+		return "", err
+	}
+
+	for _, asset := range responseObj.Assets {
+		if asset.Key == "icon" {
+			return asset.Value, nil
+		}
+	}
+
+	return "", nil
+}
+
 func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auction, error) {
 	u := url.URL{
 		Scheme: "https",
@@ -227,7 +368,7 @@ func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auctio
 	}
 
 	q := u.Query()
-	q.Set("namespace", bc.namespace)
+	q.Set("namespace", bc.dynamicNamespace)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequest("GET", u.String(), nil)
