@@ -142,7 +142,7 @@ type AuctionHouse struct {
 	Name string
 }
 
-func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, error) {
+func (bc *BlizzardClient) GetAuctionHouses(realmId int64) ([]*AuctionHouse, error) {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "us.api.blizzard.com",
@@ -187,12 +187,12 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) (*[]AuctionHouse, erro
 		return nil, err
 	}
 
-	var auctions []AuctionHouse
+	var auctions []*AuctionHouse
 	for _, auction := range responseObj.Auctions {
-		auctions = append(auctions, AuctionHouse{Id: auction.Id, Name: auction.Name.EnUS})
+		auctions = append(auctions, &AuctionHouse{Id: auction.Id, Name: auction.Name.EnUS})
 	}
 
-	return &auctions, nil
+	return auctions, nil
 }
 
 type bItemName struct {
