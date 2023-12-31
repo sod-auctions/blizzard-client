@@ -67,7 +67,7 @@ type Realm struct {
 	Name string
 }
 
-func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
+func (bc *BlizzardClient) GetRealms() ([]Realm, error) {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "us.api.blizzard.com",
@@ -121,7 +121,7 @@ func (bc *BlizzardClient) GetRealms() (*[]Realm, error) {
 		}
 	}
 
-	return &realms, nil
+	return realms, nil
 }
 
 type bAuctionHouseName struct {
@@ -142,7 +142,7 @@ type AuctionHouse struct {
 	Name string
 }
 
-func (bc *BlizzardClient) GetAuctionHouses(realmId int64) ([]*AuctionHouse, error) {
+func (bc *BlizzardClient) GetAuctionHouses(realmId int64) ([]AuctionHouse, error) {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "us.api.blizzard.com",
@@ -187,12 +187,12 @@ func (bc *BlizzardClient) GetAuctionHouses(realmId int64) ([]*AuctionHouse, erro
 		return nil, err
 	}
 
-	var auctions []*AuctionHouse
+	var auctionHouses []AuctionHouse
 	for _, auction := range responseObj.Auctions {
-		auctions = append(auctions, &AuctionHouse{Id: auction.Id, Name: auction.Name.EnUS})
+		auctionHouses = append(auctionHouses, AuctionHouse{Id: auction.Id, Name: auction.Name.EnUS})
 	}
 
-	return auctions, nil
+	return auctionHouses, nil
 }
 
 type bItemName struct {
@@ -360,7 +360,7 @@ func (bc *BlizzardClient) GetItemMedia(itemId int32) (string, error) {
 	return "", nil
 }
 
-func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auction, error) {
+func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) ([]*Auction, error) {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "us.api.blizzard.com",
@@ -405,9 +405,9 @@ func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auctio
 		return nil, err
 	}
 
-	var auctions []Auction
+	var auctions []*Auction
 	for _, auction := range responseObj.Auctions {
-		auctions = append(auctions, Auction{
+		auctions = append(auctions, &Auction{
 			Id:       auction.Id,
 			ItemId:   auction.Item.Id,
 			Bid:      auction.Bid,
@@ -416,7 +416,7 @@ func (bc *BlizzardClient) GetAuctions(realmId int64, auctionId int64) (*[]Auctio
 			TimeLeft: auction.TimeLeft,
 		})
 	}
-	return &auctions, nil
+	return auctions, nil
 }
 
 type boAuthResponse struct {
