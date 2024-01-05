@@ -209,14 +209,22 @@ type bItemPreviewItem struct {
 }
 
 type bItemResponse struct {
-	Id          int32            `json:"id"`
-	PreviewItem bItemPreviewItem `json:"preview_item"`
+	Id            int32            `json:"id"`
+	PreviewItem   bItemPreviewItem `json:"preview_item"`
+	Level         int16            `json:"level"`
+	RequiredLevel int16            `json:"required_level"`
+	PurchasePrice int32            `json:"purchase_price"`
+	SellPrice     int32            `json:"sell_price"`
 }
 
 type Item struct {
-	Id      int32
-	Name    string
-	Quality string
+	Id            int32
+	Name          string
+	Quality       string
+	Level         int16
+	RequiredLevel int16
+	PurchasePrice int32
+	SellPrice     int32
 }
 
 func (bc *BlizzardClient) GetItem(itemId int32) (*Item, error) {
@@ -265,9 +273,13 @@ func (bc *BlizzardClient) GetItem(itemId int32) (*Item, error) {
 	}
 
 	return &Item{
-		Id:      responseObj.Id,
-		Name:    responseObj.PreviewItem.Name.EnUS,
-		Quality: responseObj.PreviewItem.Quality.Name.EnUS,
+		Id:            responseObj.Id,
+		Name:          responseObj.PreviewItem.Name.EnUS,
+		Quality:       responseObj.PreviewItem.Quality.Name.EnUS,
+		Level:         responseObj.Level,
+		RequiredLevel: responseObj.RequiredLevel,
+		PurchasePrice: responseObj.PurchasePrice,
+		SellPrice:     responseObj.SellPrice,
 	}, nil
 }
 
